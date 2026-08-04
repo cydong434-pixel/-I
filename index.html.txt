@@ -1,0 +1,57 @@
+// api/chat.js - Vercel Serverless Function
+export default async function handler(req, res) {
+    // 只允许 POST 请求
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: '只支持 POST 请求' });
+    }
+
+    const { concept, explanation } = req.body;
+    if (!concept || !explanation) {
+        return res.status(400).json({ error: '缺少概念或解释' });
+    }
+
+    const prompt = `
+你是一个费曼学习法教练。用户正在学习概念："${concept}"，并给出了他的解释：
+"${explanation}"
+
+请按以下要求反馈（用中文）：
+1. 指出解释中哪里用了专业术语但没解释清楚（如果有）
+2. 指出逻辑是否有跳跃（举例说明）
+3. 给出一个更简单的类比或比喻
+4. 整体评分（1-10分），并说明理由
+
+要求：语气温和，鼓励用户，不超过200字。
+`;
+
+    try {
+        const response = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: 'deepseek-v4-flash',
+                messages: [
+                    { role: 'system', content: '你是费曼学习法专家，擅长用简单语言解释复杂概念。' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.7,
+                max_tokens: 500
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.choices && data.choices[0]) {
+            res.status(200).json({ 
+                feedback: data.choices[0].message.content 
+            });
+        } else {
+            throw new Error('API返回异常');
+        }
+    } catch (error) {
+        console.error('DeepSeek API错误:', error);
+        res.status(500).json({ error: 'AI教练暂时走神了，请稍后再试' });
+    }
+}
